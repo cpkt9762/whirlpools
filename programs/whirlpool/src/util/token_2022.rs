@@ -138,8 +138,11 @@ pub fn initialize_token_metadata_extension<'info>(
     let token_mint_data = position_mint.try_borrow_data()?;
     let token_mint_unpacked =
         StateWithExtensions::<spl_token_2022::state::Mint>::unpack(&token_mint_data)?;
-    let new_account_len = token_mint_unpacked
-        .try_get_new_account_len::<spl_token_metadata_interface::state::TokenMetadata>(&metadata)?;
+    todo!(
+        ".try_get_new_account_len::<spl_token_metadata_interface::state::TokenMetadata>()?;
+        the trait `Pod` is not implemented for `spl_token_metadata_interface::state::TokenMetada"
+    );
+    let new_account_len = token_mint_unpacked.try_get_account_len()?;
     let new_rent_exempt_minimum = Rent::get()?.minimum_balance(new_account_len);
     let additional_rent = new_rent_exempt_minimum.saturating_sub(position_mint.lamports());
     drop(token_mint_data); // CPI call will borrow the account data
