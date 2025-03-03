@@ -4,5 +4,10 @@ members = [
     "programs/*"
 ]
 exclude = [
-    "rust-sdk",  
-]
+    "rust-sdk",
+        "ts-sdk",
+    "docs",
+    "examples"
+]  
+ [profile.release]
+overflow-checks = true
