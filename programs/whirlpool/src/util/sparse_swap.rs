@@ -221,7 +221,102 @@ impl<'info> SparseSwapTickSequenceBuilder<'info> {
             tick_array_accounts,
         })
     }
+    pub fn try_from2(
+        key: &Pubkey,
+        whirlpool: &Whirlpool,
+        a_to_b: bool,
+        static_tick_array_account_infos: Vec<AccountInfo<'info>>,
+        supplemental_tick_array_account_infos: Option<Vec<AccountInfo<'info>>>,
+    ) -> Result<Self> {
+        let mut tick_array_account_infos = static_tick_array_account_infos;
+        if let Some(supplemental_tick_array_account_infos) = supplemental_tick_array_account_infos {
+            tick_array_account_infos.extend(supplemental_tick_array_account_infos);
+        }
 
+        // dedup by key
+        tick_array_account_infos.sort_by_key(|a| a.key());
+        tick_array_account_infos.dedup_by_key(|a| a.key());
+
+        let mut initialized = vec![];
+        let mut uninitialized = vec![];
+        for account_info in tick_array_account_infos.into_iter() {
+            let state = peek_tick_array(account_info)?;
+
+            match &state {
+                TickArrayAccount::Initialized {
+                    tick_array_whirlpool,
+                    start_tick_index,
+                    ..
+                } => {
+                    // has_one constraint equivalent check
+                    if tick_array_whirlpool != key {
+                        return Err(ErrorCode::DifferentWhirlpoolTickArrayAccount.into());
+                    }
+
+                    // TickArray accounts in initialized have been verified as:
+                    //   - Owned by this program
+                    //   - Initialized as TickArray account
+                    //   - Writable account
+                    //   - TickArray account for this whirlpool
+                    // So we can safely use these accounts.
+                    initialized.push((*start_tick_index, state));
+                }
+                TickArrayAccount::Uninitialized {
+                    pubkey: account_address,
+                    ..
+                } => {
+                    // TickArray accounts in uninitialized have been verified as:
+                    //   - Owned by System program
+                    //   - Data size is zero
+                    //   - Writable account
+                    // But we are not sure if these accounts are valid TickArray PDA for this whirlpool,
+                    // so we need to check it later.
+                    uninitialized.push((*account_address, state));
+                }
+            }
+        }
+
+        let start_tick_indexes = get_start_tick_indexes2(whirlpool, a_to_b);
+
+        let mut tick_array_accounts: Vec<TickArrayAccount> = vec![];
+        for start_tick_index in start_tick_indexes.iter() {
+            // PDA calculation is expensive (3000 CU ~ / PDA),
+            // so PDA is calculated only if not found in start_tick_index comparison.
+
+            // find from initialized tick arrays
+            if let Some(pos) = initialized.iter().position(|t| t.0 == *start_tick_index) {
+                let state = initialized.remove(pos).1;
+                tick_array_accounts.push(state);
+                continue;
+            }
+
+            // find from uninitialized tick arrays
+            let tick_array_pda = derive_tick_array_pda2(key, *start_tick_index);
+            if let Some(pos) = uninitialized.iter().position(|t| t.0 == tick_array_pda) {
+                let state = uninitialized.remove(pos).1;
+                if let TickArrayAccount::Uninitialized { pubkey, .. } = state {
+                    tick_array_accounts.push(TickArrayAccount::Uninitialized {
+                        pubkey,
+                        start_tick_index: Some(*start_tick_index),
+                    });
+                } else {
+                    unreachable!("state in uninitialized must be Uninitialized");
+                }
+                continue;
+            }
+
+            // no more valid tickarrays for this swap
+            break;
+        }
+
+        if tick_array_accounts.is_empty() {
+            return Err(crate::errors::ErrorCode::InvalidTickArraySequence.into());
+        }
+
+        Ok(Self {
+            tick_array_accounts,
+        })
+    }
     pub fn build<'a>(&'a self) -> Result<SwapTickSequence<'a>> {
         let mut proxied_tick_arrays = VecDeque::with_capacity(3);
         for tick_array_account in self.tick_array_accounts.iter() {
@@ -345,7 +440,39 @@ fn get_start_tick_indexes(whirlpool: &Account<Whirlpool>, a_to_b: bool) -> Vec<i
 
     start_tick_indexes
 }
+fn get_start_tick_indexes2(whirlpool: &Whirlpool, a_to_b: bool) -> Vec<i32> {
+    let tick_current_index = whirlpool.tick_current_index;
+    let tick_spacing_u16 = whirlpool.tick_spacing;
+    let tick_spacing_i32 = whirlpool.tick_spacing as i32;
+    let ticks_in_array = TICK_ARRAY_SIZE * tick_spacing_i32;
 
+    let start_tick_index_base = floor_division(tick_current_index, ticks_in_array) * ticks_in_array;
+    let offset = if a_to_b {
+        [0, -1, -2]
+    } else {
+        let shifted =
+            tick_current_index + tick_spacing_i32 >= start_tick_index_base + ticks_in_array;
+        if shifted {
+            [1, 2, 3]
+        } else {
+            [0, 1, 2]
+        }
+    };
+
+    let start_tick_indexes = offset
+        .iter()
+        .filter_map(|&o| {
+            let start_tick_index = start_tick_index_base + o * ticks_in_array;
+            if Tick::check_is_valid_start_tick(start_tick_index, tick_spacing_u16) {
+                Some(start_tick_index)
+            } else {
+                None
+            }
+        })
+        .collect::<Vec<i32>>();
+
+    start_tick_indexes
+}
 fn floor_division(dividend: i32, divisor: i32) -> i32 {
     assert!(divisor != 0, "Divisor cannot be zero.");
     if dividend % divisor == 0 || dividend.signum() == divisor.signum() {
@@ -360,6 +487,17 @@ fn derive_tick_array_pda(whirlpool: &Account<Whirlpool>, start_tick_index: i32) 
         &[
             b"tick_array",
             whirlpool.key().as_ref(),
+            start_tick_index.to_string().as_bytes(),
+        ],
+        &TickArray::owner(),
+    )
+    .0
+}
+fn derive_tick_array_pda2(key: &Pubkey, start_tick_index: i32) -> Pubkey {
+    Pubkey::find_program_address(
+        &[
+            b"tick_array",
+            key.as_ref(),
             start_tick_index.to_string().as_bytes(),
         ],
         &TickArray::owner(),

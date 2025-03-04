@@ -81,7 +81,7 @@ pub fn handler<'info>(
     let clock = Clock::get()?;
     // Update the global reward growth which increases as a function of time.
     let timestamp = to_timestamp_u64(clock.unix_timestamp)?;
-
+    msg!("timestamp");
     // Process remaining accounts
     let remaining_accounts = parse_remaining_accounts(
         ctx.remaining_accounts,
@@ -219,6 +219,13 @@ pub fn swap_with_transfer_fee_extension<'info>(
         let transfer_fee_excluded_input =
             calculate_transfer_fee_excluded_amount(input_token_mint, transfer_fee_included_input)?
                 .amount;
+        msg!(
+            "a_to_b: {} timestamp {} transfer_fee_excluded_input: {} sqrt_price_limit {}",
+            a_to_b,
+            timestamp,
+            transfer_fee_excluded_input,
+            sqrt_price_limit
+        );
 
         let swap_update = swap(
             whirlpool,
@@ -235,6 +242,12 @@ pub fn swap_with_transfer_fee_extension<'info>(
         } else {
             (swap_update.amount_b, swap_update.amount_a)
         };
+
+        msg!(
+            "swap_update_amount_input: {} swap_update_amount_output: {}",
+            swap_update_amount_input,
+            swap_update_amount_output
+        );
 
         let fullfilled = swap_update_amount_input == transfer_fee_excluded_input;
 
@@ -276,6 +289,12 @@ pub fn swap_with_transfer_fee_extension<'info>(
     let transfer_fee_included_output =
         calculate_transfer_fee_included_amount(output_token_mint, transfer_fee_excluded_output)?
             .amount;
+    msg!(
+        "a_to_b: {} timestamp {} transfer_fee_included_output: {}",
+        a_to_b,
+        timestamp,
+        transfer_fee_included_output
+    );
 
     let swap_update = swap(
         whirlpool,
@@ -295,6 +314,11 @@ pub fn swap_with_transfer_fee_extension<'info>(
 
     let transfer_fee_included_input =
         calculate_transfer_fee_included_amount(input_token_mint, swap_update_amount_input)?.amount;
+    msg!(
+        "swap_update_amount_input: {} swap_update_amount_output: {}",
+        swap_update_amount_input,
+        swap_update_amount_output
+    );
 
     let adjusted_transfer_fee_included_output = swap_update_amount_output;
 
@@ -309,6 +333,7 @@ pub fn swap_with_transfer_fee_extension<'info>(
             transfer_fee_included_input,
         )
     };
+
     Ok(PostSwapUpdate {
         amount_a, // updated (transfer fee included)
         amount_b, // updated (transfer fee included)

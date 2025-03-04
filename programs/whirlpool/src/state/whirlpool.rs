@@ -273,6 +273,10 @@ impl Whirlpool {
         self.protocol_fee_owed_a = 0;
         self.protocol_fee_owed_b = 0;
     }
+    pub fn deserialize(data: &mut &[u8]) -> Result<Self> {
+        let whirlpool = Whirlpool::try_deserialize(data)?;
+        Ok(whirlpool)
+    }
 }
 
 /// Stores the state relevant for tracking liquidity mining rewards at the `Whirlpool` level.

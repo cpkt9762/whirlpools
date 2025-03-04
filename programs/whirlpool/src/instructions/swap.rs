@@ -58,7 +58,7 @@ pub fn handler(
     let clock = Clock::get()?;
     // Update the global reward growth which increases as a function of time.
     let timestamp = to_timestamp_u64(clock.unix_timestamp)?;
-
+    msg!("timestamp");
     let builder = SparseSwapTickSequenceBuilder::try_from(
         whirlpool,
         a_to_b,

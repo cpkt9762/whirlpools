@@ -5,7 +5,7 @@ use anchor_lang::prelude::*;
 use std::cell::RefMut;
 
 pub struct SwapTickSequence<'info> {
-    arrays: Vec<ProxiedTickArray<'info>>,
+    pub arrays: Vec<ProxiedTickArray<'info>>,
 }
 
 impl<'info> SwapTickSequence<'info> {

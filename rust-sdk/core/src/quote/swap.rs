@@ -6,7 +6,8 @@ use crate::{
     CoreError, ExactInSwapQuote, ExactOutSwapQuote, TickArraySequence, TickArrays, TickFacade,
     TransferFee, WhirlpoolFacade, AMOUNT_EXCEEDS_MAX_U64, ARITHMETIC_OVERFLOW,
     INVALID_SQRT_PRICE_LIMIT_DIRECTION, MAX_SQRT_PRICE, MIN_SQRT_PRICE,
-    SQRT_PRICE_LIMIT_OUT_OF_BOUNDS, ZERO_TRADABLE_AMOUNT,
+    SQRT_PRICE_LIMIT_OUT_OF_BOUNDS, TICK_ARRAY_OUT_OF_BOUNDS, TICK_ARRAY_SIZE,
+    ZERO_TRADABLE_AMOUNT,
 };
 
 #[cfg(feature = "wasm")]
@@ -227,7 +228,6 @@ pub fn compute_swap<const SIZE: usize>(
         } else {
             next_tick_sqrt_price.min(sqrt_price_limit)
         };
-
         let step_quote = compute_swap_step(
             amount_remaining,
             whirlpool.fee_rate,
@@ -237,9 +237,11 @@ pub fn compute_swap<const SIZE: usize>(
             a_to_b,
             specified_input,
         )?;
-
+        //amount_remaining
+        if step_quote.amount_in == 0 && step_quote.amount_out == 0 && step_quote.fee_amount == 0 {
+            break;
+        }
         trade_fee += step_quote.fee_amount;
-
         if specified_input {
             amount_remaining = amount_remaining
                 .checked_sub(step_quote.amount_in)
@@ -266,12 +268,17 @@ pub fn compute_swap<const SIZE: usize>(
                 next_tick_index - 1
             } else {
                 next_tick_index
-            }
+            };
         } else if step_quote.next_sqrt_price != current_sqrt_price {
             current_tick_index = sqrt_price_to_tick_index(step_quote.next_sqrt_price.into()).into();
         }
 
         current_sqrt_price = step_quote.next_sqrt_price;
+        // 检查是否超出 TickArray 范围
+        let min_tick = tick_sequence.tick_arrays[0].unwrap().start_tick_index;
+        if tick_sequence.tick_arrays[SIZE - 1].is_none() {
+            return Err(TICK_ARRAY_OUT_OF_BOUNDS);
+        }
     }
 
     let swapped_amount = token_amount - amount_remaining;
