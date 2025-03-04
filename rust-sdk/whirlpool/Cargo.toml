@@ -16,10 +16,10 @@ default = []
 solana-v2 = ["orca_whirlpools_client/solana-v2"]
 
 [dependencies]
-solana-program = { version = "=2.1.0" }
-solana-client = { version = "=2.1.0" }
-solana-sdk = { version = "=2.1.0" }
-solana-account-decoder = { version = "=2.1.0" }
+solana-program = { version = "2" }
+solana-client = { version = "2" }
+solana-sdk = { version = "2" }
+solana-account-decoder = { version = "2" }
 spl-token = { version = "7.0.0", features = ["no-entrypoint"] }
 spl-token-2022 = { version = "7.0.0", features = ["no-entrypoint"] }
 spl-memo = { version = "6.0.0", features = ["no-entrypoint"] }
